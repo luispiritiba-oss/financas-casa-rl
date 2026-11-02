@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Finanças Casa RL</title>
+<meta name="description" content="Finanças Casa RL — controle financeiro do casal">
+<meta name="theme-color" content="#14453f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finanças Casa RL">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="application-name" content="Finanças Casa RL">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>body{padding-top:env(safe-area-inset-top)}</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+<script>
+(function(){
+  const root=document.getElementById('root');
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const getCfg=()=>{try{return JSON.parse(localStorage.getItem('casaRL_cfg')||"null")}catch(e){return null}};
+  const setCfg=c=>{try{localStorage.setItem('casaRL_cfg',JSON.stringify(c))}catch(e){}};
+
+  // Link de convite: ...#s=<endereço>&k=<chave>
+  if(location.hash.length>3){
+    const h=new URLSearchParams(location.hash.slice(1));
+    if(h.get('s')&&h.get('k')){setCfg({url:h.get('s'),key:h.get('k')});history.replaceState(null,"",location.pathname)}
+  }
+
+  const shell=inner=>{root.innerHTML=`<div class="setup"><img class="logo" src="icons/icon-192.png" alt=""><h1>Finanças Casa RL</h1>${inner}</div>`};
+  const loading=msg=>shell(`<p class="c">${esc(msg)}</p>`);
+
+  async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)});return r.json()}
+
+  function setup(err){
+    const c=getCfg()||{};
+    shell(`<p class="c">Conecte este celular ao servidor do casal (Google Drive).</p>
+      <label class="f">Endereço do servidor</label><input id="su" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url||"")}">
+      <label class="f">Chave de acesso</label><input id="sk" placeholder="chave recebida do Luis" value="${esc(c.key||"")}">
+      <button class="btn" id="sgo">Conectar</button>${err?`<div class="err">${esc(err)}</div>`:""}
+      <p class="hint" style="margin-top:16px">Dica: o Luis pode mandar um link de convite que já preenche estes campos.</p>`);
+    document.getElementById('sgo').onclick=()=>{const url=document.getElementById('su').value.trim(),key=document.getElementById('sk').value.trim();if(!/^https?:\/\//.test(url)||!key)return setup("Preencha o endereço (começa com https://) e a chave.");setCfg({url,key});start()};
+  }
+
+  function importer(cfg,who){
+    shell(`<p class="c">Olá, ${esc(who)}! O servidor está pronto, mas ainda sem dados.</p>
+      <div class="card"><h3>Importar dados iniciais</h3><p class="hint">Escolha o arquivo <b>casa-rl-dados.json</b> (faturas de 2026, gastos fixos, rendas, metas, classificações e a foto do casal). Isso é feito uma vez só.</p>
+      <label class="btn" for="sf" style="margin-top:0">Escolher arquivo</label><input type="file" id="sf" accept=".json,application/json" style="display:none"><div id="sm" class="hint" style="margin-top:8px"></div></div>
+      <button class="btn ghost" id="sout">Usar outra chave</button>`);
+    document.getElementById('sout').onclick=()=>{localStorage.removeItem('casaRL_cfg');setup()};
+    document.getElementById('sf').onchange=async e=>{const f=e.target.files[0];if(!f)return;const m=document.getElementById('sm');m.textContent="Enviando para o Drive…";
+      try{const d=JSON.parse(await f.text());if(!d.base||!d.base.tx)throw new Error("arquivo inválido");const r=await post(cfg.url,{op:"init",key:cfg.key,base:d.base,state:d.state});if(!r.ok)throw new Error(r.error||"falha");m.textContent="Pronto!";start()}
+      catch(err){m.textContent="Não deu certo: "+err.message}};
+  }
+
+  async function start(){
+    const cfg=getCfg(); if(!cfg||!cfg.url||!cfg.key) return setup();
+    loading("Carregando dados do casal…");
+    let r=null;
+    try{r=await post(cfg.url,{op:"load",key:cfg.key}); if(r&&r.ok){try{localStorage.setItem('casaRL_cache',JSON.stringify(r))}catch(e){}}}
+    catch(e){try{r=JSON.parse(localStorage.getItem('casaRL_cache')||"null")}catch(x){} if(r){r.offline=true}else return setup("Não consegui falar com o servidor. Verifique a internet e o endereço.")}
+    if(!r||!r.ok) return setup(r&&r.error==="chave inválida"?"Chave inválida.":"Erro do servidor: "+((r&&r.error)||"desconhecido"));
+    if(!r.base) return r.role==="admin"?importer(cfg,r.who):shell(`<p class="c">Conectado como ${esc(r.who)}. O Luis ainda precisa importar os dados iniciais.</p><button class="btn" onclick="location.reload()">Tentar de novo</button>`);
+    root.innerHTML="";
+    window.APP(r.base,{url:cfg.url,key:cfg.key,who:r.who,role:r.role,state:r.state});
+    if(r.offline){const t=document.getElementById('toast');if(t){t.textContent="Sem internet: mostrando a última cópia salva.";t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500)}}
+  }
+  start();
+  if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+})();
+</script>
+</body>
+</html>
