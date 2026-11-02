@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Finanças Casa RL</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// Links que chegaram com o "#" trocado por "%23" (ou com espaços/quebras) caem aqui: corrige e manda para o app.
+(function(){
+  var base="/financas-casa-rl/";
+  var full=location.href;
+  var i=full.indexOf(base);
+  var rest=i>=0?full.slice(i+base.length):"";
+  try{rest=decodeURIComponent(rest)}catch(e){}
+  rest=rest.replace(/\s+/g,"");
+  var m=rest.match(/[#?&]?s=([^&#]+)[&#]k=([^&#]+)/);
+  if(m){location.replace(base+"#s="+encodeURIComponent(m[1])+"&k="+encodeURIComponent(m[2]));}
+  else{location.replace(base);}
+})();
+</script></head><body>Abrindo o Finanças Casa RL…</body></html>

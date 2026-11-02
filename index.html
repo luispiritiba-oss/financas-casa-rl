@@ -38,8 +38,8 @@
   const setCfg=c=>{try{localStorage.setItem('casaRL_cfg',JSON.stringify(c))}catch(e){}};
 
   // Link de convite: ...#s=<endereço>&k=<chave>
-  if(location.hash.length>3){
-    const h=new URLSearchParams(location.hash.slice(1));
+  if(location.hash.length>3||/[?&]k=/.test(location.search)){
+    const h=new URLSearchParams(location.hash.length>3?location.hash.slice(1):location.search.slice(1));
     const s=(h.get('s')||"").trim(), k=(h.get('k')||"").trim();
     if(s&&k){setCfg({url:s,key:k});history.replaceState(null,"",location.pathname)}
   }
