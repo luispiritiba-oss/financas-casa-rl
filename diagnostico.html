@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnóstico — Finanças Casa RL</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#f4f3ee;color:#111;font-size:15px}h1{font-size:19px}.l{background:#fff;border-radius:10px;padding:10px 12px;margin:8px 0;word-break:break-all}.ok{color:#0a6b0a;font-weight:700}.no{color:#9c1c1c;font-weight:700}button{font:inherit;padding:12px 16px;border:0;border-radius:10px;background:#14453f;color:#fff;width:100%;margin-top:10px}</style></head>
+<body><h1>Diagnóstico do Finanças Casa RL</h1><p>Tire um print desta tela e mande para o Luis.</p><div id="o"></div>
+<button onclick="localStorage.removeItem('casaRL_cfg');localStorage.removeItem('casaRL_cache');location.href='./'">Apagar conexão deste celular e começar de novo</button>
+<script>
+(async function(){
+  var o=document.getElementById('o');
+  function line(t,ok){var d=document.createElement('div');d.className='l';d.innerHTML=(ok===true?'<span class="ok">✓</span> ':ok===false?'<span class="no">✗</span> ':'')+t;o.appendChild(d)}
+  line('Navegador: '+navigator.userAgent);
+  var ls=true;try{localStorage.setItem('_t','1');localStorage.removeItem('_t')}catch(e){ls=false}
+  line('Armazenamento do navegador: '+(ls?'funciona':'BLOQUEADO (modo privado?)'),ls);
+  var cfg=null;try{cfg=JSON.parse(localStorage.getItem('casaRL_cfg')||'null')}catch(e){}
+  if(!cfg){line('Conexão salva neste celular: nenhuma',false);return}
+  line('Servidor salvo: …'+String(cfg.url).slice(-28),/\/exec$/.test(cfg.url));
+  line('Chave salva: '+String(cfg.key).length+' caracteres (início '+String(cfg.key).slice(0,3)+'…)',String(cfg.key).length>=20);
+  var t0=Date.now();
+  try{
+    var r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({op:'load',key:cfg.key})});
+    line('Resposta do servidor: HTTP '+r.status+' em '+((Date.now()-t0)/1000).toFixed(1)+' s',r.ok);
+    var txt=await r.text(); var j=null; try{j=JSON.parse(txt)}catch(e){}
+    if(!j){line('Resposta não é do app (começa com): '+txt.slice(0,120).replace(/</g,'&lt;'),false);return}
+    line('ok: '+j.ok+(j.error?' · erro: '+j.error:''),j.ok);
+    if(j.ok){line('Entrou como: '+j.who+' ('+j.role+')',true);line('Dados no servidor: '+(j.base?('sim, '+(j.base.tx||[]).length+' lançamentos'):'NÃO'),!!j.base);line('Tamanho recebido: '+Math.round(txt.length/1024)+' KB',true)}
+  }catch(e){line('Falha ao falar com o servidor: '+e.message,false)}
+  try{var a=await fetch('app.js',{cache:'no-store'});line('Código do app (app.js): HTTP '+a.status,a.ok)}catch(e){line('app.js não carregou: '+e.message,false)}
+})();
+</script></body></html>
