@@ -27,6 +27,12 @@
 <script>
 (function(){
   const root=document.getElementById('root');
+  function showErr(msg){
+    root.innerHTML='<div class="setup"><img class="logo" src="icons/icon-192.png" alt=""><h1>Finanças Casa RL</h1><p class="c">O app encontrou um problema neste celular.</p><div class="note" style="word-break:break-word">'+String(msg).replace(/[<>&]/g,'')+'</div><button class="btn" onclick="location.reload()">Tentar de novo</button><button class="btn ghost" onclick="localStorage.removeItem(\'casaRL_cfg\');location.href=location.pathname">Refazer conexão</button><p class="hint" style="margin-top:12px">Mande um print desta tela para o Luis.</p></div>';
+  }
+  window.addEventListener('error',e=>{if(!root.querySelector('.app'))showErr((e.message||'erro')+' ('+(e.filename||'').split('/').pop()+':'+(e.lineno||'')+')')});
+  window.addEventListener('unhandledrejection',e=>{if(!root.querySelector('.app'))showErr('Falha: '+((e.reason&&e.reason.message)||e.reason))});
+  if(typeof window.APP!=="function"){showErr("O código do app não carregou (app.js). Verifique a internet e tente de novo.");return}
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const getCfg=()=>{try{return JSON.parse(localStorage.getItem('casaRL_cfg')||"null")}catch(e){return null}};
   const setCfg=c=>{try{localStorage.setItem('casaRL_cfg',JSON.stringify(c))}catch(e){}};
@@ -34,7 +40,8 @@
   // Link de convite: ...#s=<endereço>&k=<chave>
   if(location.hash.length>3){
     const h=new URLSearchParams(location.hash.slice(1));
-    if(h.get('s')&&h.get('k')){setCfg({url:h.get('s'),key:h.get('k')});history.replaceState(null,"",location.pathname)}
+    const s=(h.get('s')||"").trim(), k=(h.get('k')||"").trim();
+    if(s&&k){setCfg({url:s,key:k});history.replaceState(null,"",location.pathname)}
   }
 
   const shell=inner=>{root.innerHTML=`<div class="setup"><img class="logo" src="icons/icon-192.png" alt=""><h1>Finanças Casa RL</h1>${inner}</div>`};
@@ -49,7 +56,7 @@
       <label class="f">Chave de acesso</label><input id="sk" placeholder="chave recebida do Luis" value="${esc(c.key||"")}">
       <button class="btn" id="sgo">Conectar</button>${err?`<div class="err">${esc(err)}</div>`:""}
       <p class="hint" style="margin-top:16px">Dica: o Luis pode mandar um link de convite que já preenche estes campos.</p>`);
-    document.getElementById('sgo').onclick=()=>{const url=document.getElementById('su').value.trim(),key=document.getElementById('sk').value.trim();if(!/^https?:\/\//.test(url)||!key)return setup("Preencha o endereço (começa com https://) e a chave.");setCfg({url,key});start()};
+    document.getElementById('sgo').onclick=()=>{const url=document.getElementById('su').value.trim(),key=document.getElementById('sk').value.replace(/\s+/g,"");if(!/^https?:\/\//.test(url)||!key)return setup("Preencha o endereço (começa com https://) e a chave.");setCfg({url,key});start()};
   }
 
   function importer(cfg,who){
@@ -67,12 +74,13 @@
     const cfg=getCfg(); if(!cfg||!cfg.url||!cfg.key) return setup();
     loading("Carregando dados do casal…");
     let r=null;
-    try{r=await post(cfg.url,{op:"load",key:cfg.key}); if(r&&r.ok){try{localStorage.setItem('casaRL_cache',JSON.stringify(r))}catch(e){}}}
-    catch(e){try{r=JSON.parse(localStorage.getItem('casaRL_cache')||"null")}catch(x){} if(r){r.offline=true}else return setup("Não consegui falar com o servidor. Verifique a internet e o endereço.")}
-    if(!r||!r.ok) return setup(r&&r.error==="chave inválida"?"Chave inválida.":"Erro do servidor: "+((r&&r.error)||"desconhecido"));
+    const slow=setTimeout(()=>loading("O servidor do Google está demorando… aguarde mais um pouco."),12000);
+    try{r=await post(cfg.url,{op:"load",key:cfg.key}); clearTimeout(slow); if(r&&r.ok){try{localStorage.setItem('casaRL_cache',JSON.stringify(r))}catch(e){}}}
+    catch(e){clearTimeout(slow);try{r=JSON.parse(localStorage.getItem('casaRL_cache')||"null")}catch(x){} if(r){r.offline=true}else return setup("Não consegui falar com o servidor ("+(e&&e.message||"erro de rede")+"). Confira a internet e se o endereço termina em /exec.")}
+    if(!r||!r.ok) return setup(r&&r.error==="chave inválida"?"Chave inválida: confira se a chave foi copiada inteira, sem espaços (e se no link a palavra CHAVE_DA_ROANNA foi trocada pela chave dela).":"Erro do servidor: "+((r&&r.error)||"desconhecido"));
     if(!r.base) return r.role==="admin"?importer(cfg,r.who):shell(`<p class="c">Conectado como ${esc(r.who)}. O Luis ainda precisa importar os dados iniciais.</p><button class="btn" onclick="location.reload()">Tentar de novo</button>`);
     root.innerHTML="";
-    window.APP(r.base,{url:cfg.url,key:cfg.key,who:r.who,role:r.role,state:r.state});
+    try{ window.APP(r.base,{url:cfg.url,key:cfg.key,who:r.who,role:r.role,state:r.state}); }catch(err){ return showErr("Erro ao abrir: "+err.message) }
     if(r.offline){const t=document.getElementById('toast');if(t){t.textContent="Sem internet: mostrando a última cópia salva.";t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500)}}
   }
   start();

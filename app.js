@@ -1,3 +1,4 @@
+function matchAllCompat(str,re){const out=[];let m;re.lastIndex=0;while((m=re.exec(str))!==null){out.push(m);if(m[0]==="")re.lastIndex++}return out}
 window.APP=function(DATA,BK){
 let S={v:1,novos:[],importadas:[]};
 let saveTimer=null, dirty=false;
@@ -166,7 +167,7 @@ function parseOurocard(pages){
   const all=pages.map(pageText).join("\n");
   const fm=all.match(/Fatura fechada em\s*(\d\d)\/(\d\d)\/(\d{4})/); if(!fm) throw new Error("não achei o fechamento do Ourocard");
   const fech=iso(+fm[3],+fm[2],+fm[1]);
-  const ds=[...pageText(pages[0]).matchAll(/(\d\d)\/(\d\d)\/(20\d\d)/g)].map(m=>iso(+m[3],+m[2],+m[1])).filter(d=>d>fech).sort();
+  const ds=matchAllCompat(pageText(pages[0]),/(\d\d)\/(\d\d)\/(20\d\d)/g).map(m=>iso(+m[3],+m[2],+m[1])).filter(d=>d>fech).sort();
   const venc=ds[0]; if(!venc) throw new Error("não achei o vencimento do Ourocard");
   const g=re=>{const m=all.match(re);return m?NUM(m[1]):null};
   const anterior=g(/Saldo fatura anterior\s+R\$\s*([\d.,]+)/i), total=g(/Total da Fatura\s+R\$\s*([\d.,]+)/), lim=g(/Limite único\s+R\$\s*([\d.,]+)/);
@@ -240,7 +241,7 @@ async function api(op,body){
   const r=await fetch(BK.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(Object.assign({op,key:BK.key},body||{}))});return r.json();
 }
 function save(msg){
-  try{localStorage.setItem('casaRL_pending',JSON.stringify({areas:Object.fromEntries(AREAS.map(k=>[k,areaBody(k)])),novos:S.novos,importadas:S.importadas}))}catch(e){}
+  try{localStorage.setItem('casaRL_pending',JSON.stringify({areas:AREAS.reduce((o,k)=>{o[k]=areaBody(k);return o},{}),novos:S.novos,importadas:S.importadas}))}catch(e){}
   if(msg) toast(msg);
   if(RO){toast("Este acesso é só leitura.");return}
   dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(flush,600);
@@ -734,7 +735,7 @@ function parseQuick(txt){
     else if(/nubank|\bnu\b|roxinho/.test(L))cartao=quem==="Roanna"?"Nubank Roanna":"Nubank Luis";
     else if(/\bpix\b/.test(L))cartao="Pix"; else if(/d[eé]bito/.test(L))cartao="Débito"; else if(/dinheiro|esp[eé]cie/.test(L))cartao="Dinheiro";
     if(!cartao)cartao=quem==="Roanna"?"Nubank Roanna":"Bradesco Visa Infinite";
-    const nums=[...L.matchAll(/r?\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/g)].map(m=>m[1]);
+    const nums=matchAllCompat(L,/r?\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/g).map(m=>m[1]);
     if(!nums.length)return; const raw=nums[nums.length-1]; const valor=/,/.test(raw)?NUM(raw):parseFloat(raw);
     if(!(valor>0))return;
     let desc=L.replace(/r\$/g," ").replace(raw," ").replace(/bradesco|visa|infinite|ourocard|\bbb\b|\belo\b|banco do brasil|nubank|\bnu\b|roxinho|\bpix\b|d[eé]bito|dinheiro|esp[eé]cie|roanna|\blu[ií]s\b|\bno\b|\bna\b|\bcom\b|\bcart[aã]o\b|\breais\b|\bgastei\b|\bpaguei\b|\bem\b|\bde\b/g," ").replace(/\s+/g," ").trim();
