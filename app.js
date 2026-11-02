@@ -34,6 +34,9 @@ const short=n=>n.replace("Bradesco Visa Infinite","Bradesco").replace("Ourocard 
 let who="Casal";
 
 // ---------- data
+// Mês de referência = mês dos GASTOS. A fatura que vence em novembro corresponde aos gastos de outubro.
+if(DATA.refv!==2){DATA.tx.forEach(r=>{r[5]=addM(r[5],-1)});DATA.faturas.forEach(f=>{f.m=addM(f.m,-1)});DATA.parcelas.forEach(p=>{p.base=addM(p.base,-1)});DATA.refv=2}
+const isCardName=n=>CARDS.some(c=>c.nome===n);
 applyState(BK.state,true); RO=BK.role==="leitura";
 const BASE_FAT=DATA.faturas.slice(), BASE_PAR=DATA.parcelas.slice();
 let IMP=[], COMPLETE=[];
@@ -57,7 +60,7 @@ function refMonth(data,cartao){
   const d=new Date(data+"T12:00:00"); const m=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
   const c=CARDS.find(c=>c.nome===cartao);
   if(!c||!c.fech||!c.venc) return m;
-  return addM(m,(d.getDate()>=c.fech?1:0)+(c.venc<=c.fech?1:0));
+  return addM(m,(d.getDate()>=c.fech?1:0)+(c.venc<=c.fech?1:0)-1);
 }
 function months(){const set=new Set(DATA.faturas.map(f=>f.m));(S.novos||[]).forEach(t=>set.add(t.ref));return [...set].sort()}
 const fatOf=(ci,m)=>DATA.faturas.find(f=>f.c===ci&&f.m===m);
@@ -67,7 +70,7 @@ function pendentes(){
   const d=new Date(), today=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   const nowM=today.slice(0,7), out=[];
   CARDS.forEach((c,ci)=>{const last=DATA.faturas.filter(f=>f.c===ci).map(f=>f.m).sort().pop();if(!last)return;
-    for(let m=addM(last,1);m<=addM(nowM,1);m=addM(m,1)){const cm=c.venc<=c.fech?addM(m,-1):m;const close=cm+"-"+String(c.fech).padStart(2,"0");if(close<=today)out.push({c:ci,m,close})}});
+    for(let m=addM(last,1);m<=nowM;m=addM(m,1)){const close=closeDateOf(ci,m);if(close<=today)out.push({c:ci,m,close})}});
   return out;
 }
 function byCat(m){const o={};CATS.forEach(c=>o[c]=0);allTx().forEach(t=>{if(t.ref===m)o[t.cat]=(o[t.cat]||0)+t.valor});return o}
@@ -200,11 +203,13 @@ async function parseFatura(buf){
 window.__parseFatura=parseFatura;
 
 
-function closeDateOf(ci,m){const c=CARDS[ci];const cm=c.venc<=c.fech?addM(m,-1):m;return cm+"-"+String(c.fech).padStart(2,"0")}
+const dueMonth=m=>addM(m,1);
+function dueLabel(ci,m){const d=dueMonth(m);return String(CARDS[ci].venc).padStart(2,"0")+"/"+d.slice(5,7)}
+function closeDateOf(ci,m){const c=CARDS[ci];const due=dueMonth(m);const cm=c.venc<=c.fech?addM(due,-1):due;return cm+"-"+String(c.fech).padStart(2,"0")}
 function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function bills(m){
   return cardsWho().map(c=>{
-    const f=fatOf(c.i,m); const dia=String(c.venc).padStart(2,"0")+"/"+m.slice(5,7);
+    const f=fatOf(c.i,m); const dia=dueLabel(c.i,m);
     const parc=parcelasMes(m,c.i);
     if(f) return {c,dia,v:f.total,st:"real",parc};
     const prev=DATA.faturas.filter(x=>x.c===c.i&&x.m<m).sort((a,b)=>a.m<b.m?1:-1).slice(0,3);
@@ -275,6 +280,8 @@ function applyState(st,silent){
   S.novos=Object.values(nv).sort((a,b)=>a.data<b.data?1:-1);
   const fv=st.faturas||{}; Object.keys(LASTF).forEach(k=>delete LASTF[k]); Object.keys(fv).forEach(id=>LASTF[id]=JSON.stringify(fv[id]));
   S.importadas=Object.values(fv);
+  S.importadas.forEach(f=>{if(f.refv!==2){f.m=addM(f.m,-1);(f.rows||[]).forEach(r=>{r[5]=f.m});f.refv=2}});
+  (S.novos||[]).forEach(t=>{if(t.refv!==2){if(isCardName(t.cartao))t.ref=addM(t.ref,-1);t.refv=2}});
   REV=st.rev;
   if(!silent) remoteRender();
 }
@@ -378,7 +385,7 @@ function lineChart(id,o){
 // ---------- shell
 const TABS=["inicio","gastos","cartoes","metas","lancar","plano"];
 let tab=(location.hash||"#inicio").slice(1); if(!TABS.includes(tab))tab="inicio";
-let curM=(()=>{const d=new Date(),nm=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");return months().includes(nm)?nm:(COMPLETE[COMPLETE.length-1]||months()[months().length-1])})();
+let curM=(()=>{const d=new Date(),nm=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");const withF=[...new Set(DATA.faturas.map(f=>f.m))].filter(m=>m<=nm).sort();if(withF.length)return withF[withF.length-1];return months().includes(nm)?nm:(COMPLETE[COMPLETE.length-1]||months()[months().length-1])})();
 const moneyTick=v=>v>=1000?"R$ "+(v/1000).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mil":"R$ "+Math.round(v);
 const ICONS={
 inicio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>',
@@ -415,7 +422,7 @@ function renderTab(){
 }
 function renderHero(){
   const B=bills(curM), bT=sumB(B), fx=sumF(fixosWho(),true), est=B.filter(b=>b.st!=="real").length;
-  document.getElementById('hero').innerHTML=`<div class="lbl">${who==="Casal"?"Contas do casal":"Contas de "+who} em ${ml(curM)} · fixos + faturas</div>
+  document.getElementById('hero').innerHTML=`<div class="lbl">${who==="Casal"?"Gastos do casal":"Gastos de "+who} de ${ml(curM)} · faturas que vencem em ${ml(addM(curM,1))} + fixos</div>
    <div class="big">${fmt(fx+bT)}</div>
    <div class="sub">Faturas ${fmt0(bT)}${est?` (${est} estimada${est>1?"s":""})`:""} + fixos ${fmt0(fx)}</div>`;
 }
@@ -434,7 +441,7 @@ function renderInicio(){
   const pend=pendentes();
   const B=bills(curM), bT=sumB(B);
   el.innerHTML=`${pend.length?`<div class="card" style="display:flex;gap:10px;align-items:center;background:#fff8e6"><div style="font-size:22px">📄</div><div style="flex:1;font-size:13px"><b>${pend.length} fatura(s) para enviar</b><br><span style="color:var(--ink2)">${pend.slice(0,3).map(p=>esc(short(CARDS[p.c].nome))+" "+ml(p.m)).join(", ")}${pend.length>3?"…":""}</span></div><button class="btn sm" id="goUp">Enviar</button></div>`:""}
-  <div class="card" style="border-left:4px solid var(--brand2)"><h3>Contas de ${ml(curM)} por vencimento${who!=="Casal"?" · "+who:""}</h3><p class="hint">Fatura de cada cartão no dia em que vence + gastos fixos</p>
+  <div class="card" style="border-left:4px solid var(--brand2)"><h3>Gastos de ${ml(curM)} · pagamentos em ${ml(addM(curM,1))}${who!=="Casal"?" · "+who:""}</h3><p class="hint">Fatura de cada cartão com os gastos de ${ml(curM)}, no dia em que vence + gastos fixos</p>
    <table class="t">
     ${B.map(b=>`<tr><td><b style="font-variant-numeric:tabular-nums">${b.dia}</b> · ${esc(b.c.nome)}<div style="font-size:11px;color:var(--muted)">${b.st==="real"?"✓ fatura fechada":b.st==="falta"?"⚠ fechou, falta enviar o PDF · estimativa":"⏳ fatura em aberto · estimativa"}${b.st!=="real"?` (média das últimas ${b.n} = ${fmt0(b.avg)}; parcelas já previstas ${fmt0(b.parc)})`:b.parc?` · inclui ${fmt0(b.parc)} de parcelas`:""}</div></td><td class="n">${b.st==="real"?"":"~"}${fmt(b.v)}</td></tr>`).join("")}
     <tr><td>Faturas dos cartões</td><td class="n">${fmt(bT)}</td></tr>
@@ -455,7 +462,7 @@ function renderInicio(){
   </div>
   ${metasOrd().length?`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Metas</h3><button class="btn sm ghost" id="goMeta">Ver metas</button></div>
    ${metasOrd().map(m=>{const p=m.alvo?Math.min(100,(+m.guardado||0)/m.alvo*100):0;return `<div style="margin:10px 0 0"><div style="display:flex;justify-content:space-between;font-size:13px"><b>${esc(m.nome)}</b><span>${fmt0(+m.guardado||0)} de ${fmt0(+m.alvo||0)} · ${Math.round(p)}%</span></div><div class="bar"><i style="width:${p}%;background:var(--brand2)"></i></div></div>`}).join("")}</div>`:""}
-  <div class="card"><h3>Gasto por mês e por cartão</h3><p class="hint">Por vencimento · tracejado = média de ${ml(COMPLETE[0])} a ${ml(COMPLETE[COMPLETE.length-1])}. Toque num mês para abri-lo.</p><div class="chart" style="height:250px" id="cMes"></div></div>`;
+  <div class="card"><h3>Gasto por mês e por cartão</h3><p class="hint">Por mês dos gastos · tracejado = média de ${ml(COMPLETE[0])} a ${ml(COMPLETE[COMPLETE.length-1])}. Toque num mês para abri-lo.</p><div class="chart" style="height:250px" id="cMes"></div></div>`;
   const g=document.getElementById('goMeta'); if(g) g.onclick=()=>{tab="metas";render()};
   document.getElementById('goFix2').onclick=e=>{e.preventDefault();tab="gastos";gView="fix";render()};
   const gu=document.getElementById('goUp'); if(gu) gu.onclick=()=>{tab="lancar";render()};
@@ -539,7 +546,7 @@ function renderCartoes(){
   const cw=cardsWho(); if(!cw.find(c=>c.i===selCard)) selCard=cw[0].i;
   el.innerHTML=cw.map(c=>{const f=fatOf(c.i,curM);const last=DATA.faturas.filter(x=>x.c===c.i).sort((a,b)=>a.m<b.m?1:-1)[0];const ff=f||last;
     return `<div class="cc" style="background:${CGRAD[c.i]};cursor:pointer" data-c="${c.i}">${c.principal?'<span class="tag">PRINCIPAL</span>':`<span class="tag">${esc(c.holder)}</span>`}<div class="n"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${CCOL[c.i]};margin-right:6px;box-shadow:0 0 0 1.5px #fff"></i>${esc(c.nome)}</div><div class="f">Final ${esc(c.final)} · fecha ~dia ${c.fech} · vence dia ${c.venc}</div>
-     <div class="lim">${f?"Fatura "+ml(curM):"Última fatura ("+ml(last.m)+")"}: <b>${fmt(ff.total)}</b> · limite ${fmt0(c.limite)}</div><div class="bar"><i style="width:${Math.min(100,ff.total/c.limite*100)}%"></i></div></div>`}).join("")+`
+     <div class="lim">${f?"Gastos de "+ml(curM)+" (vence "+dueLabel(c.i,curM)+")":"Última fatura (gastos de "+ml(last.m)+")"}: <b>${fmt(ff.total)}</b> · limite ${fmt0(c.limite)}</div><div class="bar"><i style="width:${Math.min(100,ff.total/c.limite*100)}%"></i></div></div>`}).join("")+`
   <div class="card" id="clsCard"></div>
   <div class="card"><h3>Histórico de faturas</h3><div class="seg" id="cseg" style="margin:8px 0 10px">${cw.map(c=>`<button data-c="${c.i}" class="${c.i===selCard?"on":""}">${esc(short(c.nome))}</button>`).join("")}</div>
    <div class="chart" id="cFat"></div><table class="t" id="fTab" style="margin-top:8px"></table></div>
@@ -549,7 +556,7 @@ function renderCartoes(){
   const fs=DATA.faturas.filter(f=>f.c===selCard).sort((a,b)=>a.m<b.m?-1:1);
   const avg=fs.reduce((a,f)=>a+f.total,0)/fs.length;
   vbar('cFat',{labels:fs.map(f=>ml(f.m)),series:[{name:short(CARDS[selCard].nome),data:fs.map(f=>f.total),colors:fs.map(f=>f.m===curM?'#14453f':CCOL[selCard])}],ref:avg,refLabel:'média '+fmt0(avg)});
-  document.getElementById('fTab').innerHTML=`<tr><th>Venc.</th><th class="n">Total</th><th class="n">vs média</th></tr>`+fs.slice().reverse().map(x=>`<tr><td>${ml(x.m)}</td><td class="n">${fmt(x.total)}</td><td class="n" style="color:${x.total>avg?"#9c1c1c":"#0a6b0a"}">${x.total>avg?"+":""}${((x.total/avg-1)*100).toFixed(0)}%</td></tr>`).join("")+`<tr><td colspan="3" class="hint" style="padding-top:8px">${fs.length} faturas${fs.some(f=>f.app)?" (inclui enviadas pelo app)":""}, conferidas com os lançamentos.</td></tr>`;
+  document.getElementById('fTab').innerHTML=`<tr><th>Mês dos gastos</th><th class="n">Total</th><th class="n">vs média</th></tr>`+fs.slice().reverse().map(x=>`<tr><td>${ml(x.m)}</td><td class="n">${fmt(x.total)}</td><td class="n" style="color:${x.total>avg?"#9c1c1c":"#0a6b0a"}">${x.total>avg?"+":""}${((x.total/avg-1)*100).toFixed(0)}%</td></tr>`).join("")+`<tr><td colspan="3" class="hint" style="padding-top:8px">${fs.length} faturas${fs.some(f=>f.app)?" (inclui enviadas pelo app)":""}, conferidas com os lançamentos.</td></tr>`;
   const base=months()[months().length-1]; const fut=[];for(let i=1;i<=8;i++)fut.push(addM(base,i-1));
   vbar('cParc',{labels:fut.map(ml),stacked:true,legend:cw.map(c=>({name:short(c.nome),color:CCOL[c.i]})),series:cw.map(c=>({name:short(c.nome),color:CCOL[c.i],data:fut.map(m=>+parcelasMes(m,c.i).toFixed(2))}))});
 }
@@ -746,21 +753,25 @@ function parseQuick(txt){
   });
   return out;
 }
-async function importFiles(files){
+async function importFiles(files,selC,selM){
   const box=document.getElementById('upRes'); if(!box||!files.length) return;
   const res=[]; let added=0;
   for(const f of files){
     box.innerHTML=res.join("")+`<div class="it"><div class="d">⏳ Lendo ${esc(f.name)}…</div></div>`;
     try{
       const r=await parseFatura(await f.arrayBuffer());
+      const detC=r.card, detM=addM(r.m,-1);
+      if(selC!=null){r.card=selC} if(selM){r.m=selM} else {r.m=detM}
+      r.rows.forEach(x=>{x[5]=r.m});
+      const aviso=(detC!==r.card||detM!==r.m)?` · ⚠ o PDF parece ser ${esc(short(CARDS[detC].nome))} · gastos de ${ml(detM)}; foi salvo como você escolheu`:"";
       const card=CARDS[r.card];
-      if(DATA.faturas.find(x=>x.c===r.card&&x.m===r.m)){res.push(`<div class="it"><div><div class="d">↺ ${esc(card.nome)} · ${ml(r.m)}</div><div class="m">Já estava no app: ignorada (sem duplicar)</div></div></div>`);continue}
+      if(DATA.faturas.find(x=>x.c===r.card&&x.m===r.m)){res.push(`<div class="it"><div><div class="d">↺ ${esc(card.nome)} · gastos de ${ml(r.m)}</div><div class="m">Essa fatura já estava no app: ignorada (sem duplicar)</div></div></div>`);continue}
       const nov=(S.novos||[]); const subst=nov.filter(t=>t.cartao===card.nome&&t.ref===r.m).length;
       S.novos=nov.filter(t=>!(t.cartao===card.nome&&t.ref===r.m));
       const par=r.tx.filter(t=>t.parc&&!r.pay(t)).map(t=>{const [k,n]=t.parc.split("/").map(Number);return {d:t.desc,v:+t.valor.toFixed(2),k,n}}).filter(p=>p.k<p.n);
-      S.importadas=(S.importadas||[]).concat([{c:r.card,m:r.m,total:r.total,anterior:r.anterior,pag:+r.pag.toFixed(2),limite:r.limite,ok:r.ok,dif:+(r.esperado-r.soma).toFixed(2),file:f.name,rows:r.rows,par}]);
+      S.importadas=(S.importadas||[]).concat([{refv:2,c:r.card,m:r.m,total:r.total,anterior:r.anterior,pag:+r.pag.toFixed(2),limite:r.limite,ok:r.ok,dif:+(r.esperado-r.soma).toFixed(2),file:f.name,rows:r.rows,par}]);
       added++;
-      res.push(`<div class="it"><div><div class="d">${r.ok?"✅":"⚠️"} ${esc(card.nome)} · ${ml(r.m)}</div><div class="m">${r.rows.length} lançamentos · ${r.ok?"conferida centavo a centavo com o total do banco":"diferença de "+fmt(r.esperado-r.soma)+" — confira"}${subst?` · ${subst} lançamento(s) manual(is) substituído(s) pela fatura`:""}</div></div><div class="v">${fmt(r.total)}</div></div>`);
+      res.push(`<div class="it"><div><div class="d">${r.ok?"✅":"⚠️"} ${esc(card.nome)} · gastos de ${ml(r.m)} (vence ${dueLabel(r.card,r.m)})</div><div class="m">${r.rows.length} lançamentos · ${r.ok?"conferida centavo a centavo com o total do banco":"diferença de "+fmt(r.esperado-r.soma)+" — confira"}${subst?` · ${subst} lançamento(s) manual(is) substituído(s) pela fatura`:""}${aviso}</div></div><div class="v">${fmt(r.total)}</div></div>`);
     }catch(err){let msg=err&&err.message||String(err);if(/Invalid PDF|InvalidPDF|password|Password/i.test(msg))msg=/assword/.test(msg)?"PDF protegido por senha: baixe a fatura sem senha no app do banco":"Não é um PDF de fatura válido";else if(/import|module|Failed to fetch/i.test(msg))msg="Não consegui carregar o leitor de PDF. Verifique a internet e tente de novo, ou mande a fatura no chat";res.push(`<div class="it"><div><div class="d">❌ ${esc(f.name)}</div><div class="m">${esc(msg)}</div></div></div>`)}
   }
   if(added){rebuild();const last=S.importadas[S.importadas.length-1];curM=last.m;render();save(added+" fatura(s) importada(s)")}
@@ -773,11 +784,16 @@ function renderLancar(){
   const el=document.getElementById('s-lancar');
   const _d=new Date();const today=_d.getFullYear()+"-"+String(_d.getMonth()+1).padStart(2,"0")+"-"+String(_d.getDate()).padStart(2,"0");
   const pend=pendentes(); const imps=(S.importadas||[]).slice().sort((a,b)=>a.m<b.m?1:-1);
-  el.innerHTML=`<div class="card" id="upCard"><h3>📄 Enviar faturas do mês</h3><p class="hint">Selecione o PDF da fatura (Bradesco, Nubank ou Ourocard). O app lê no próprio aparelho, identifica cartão e mês, importa os lançamentos e confere com o total do banco.</p>
-   ${pend.length?`<div class="note" style="margin-bottom:10px"><b>Faturas já fechadas e ainda não enviadas:</b><br>${pend.map(p=>`• ${esc(CARDS[p.c].nome)} — venc. ${ml(p.m)}`).join("<br>")}</div>`:`<div class="note" style="margin-bottom:10px">✓ Todas as faturas fechadas já estão no app.</div>`}
-   <label class="btn" style="margin-top:0" for="upF">Escolher PDFs da fatura</label><input id="upF" type="file" accept="application/pdf,.pdf" multiple style="display:none">
+  const nowM=today.slice(0,7); const upMonths=[]; for(let i=-12;i<=1;i++)upMonths.push(addM(nowM,i)); upMonths.reverse();
+  const upDef=pend[0]?pend[0].m:addM(nowM,-1);
+  el.innerHTML=`<div class="card" id="upCard"><h3>📄 Enviar faturas do mês</h3><p class="hint">1) Escolha o cartão e o mês dos gastos · 2) selecione o PDF. O app importa os lançamentos e confere com o total do banco. A fatura que vence em novembro corresponde aos gastos de outubro.</p>
+   ${pend.length?`<div class="note" style="margin-bottom:10px"><b>Faturas já fechadas e ainda não enviadas:</b><br>${pend.map(p=>`• ${esc(CARDS[p.c].nome)} — gastos de ${ml(p.m)} (vence ${dueLabel(p.c,p.m)})`).join("<br>")}</div>`:`<div class="note" style="margin-bottom:10px">✓ Todas as faturas fechadas já estão no app.</div>`}
+   <div class="g2"><div><label class="f">Cartão</label><select id="upC">${CARDS.map((c,i)=>`<option value="${i}" ${pend[0]&&pend[0].c===i?"selected":""}>${esc(c.nome)}</option>`).join("")}</select></div>
+   <div><label class="f">Mês dos gastos</label><select id="upM">${upMonths.map(m=>`<option value="${m}" ${m===upDef?"selected":""}>${ml(m)}</option>`).join("")}</select></div></div>
+   <div class="hint" id="upDue" style="margin:6px 0 10px"></div>
+   <label class="btn" style="margin-top:0" for="upF">Escolher o PDF da fatura</label><input id="upF" type="file" accept="application/pdf,.pdf" style="display:none">
    <div id="upRes" class="list" style="margin-top:8px"></div>
-   ${imps.length?`<details style="margin-top:10px"><summary>Faturas enviadas pelo app (${imps.length})</summary>${imps.map(f=>`<div class="it"><div><div class="d">${esc(CARDS[f.c].nome)} · ${ml(f.m)}</div><div class="m">${f.rows.length} lançamentos · ${f.ok?"✓ conferida":"⚠ diferença "+fmt(f.dif)}</div></div><div style="display:flex;gap:8px;align-items:center"><span class="v">${fmt(f.total)}</span><button class="del" data-rm="${f.c}|${f.m}" aria-label="Remover fatura" style="width:30px">✕</button></div></div>`).join("")}</details>`:""}
+   ${imps.length?`<details style="margin-top:10px"><summary>Faturas enviadas pelo app (${imps.length})</summary>${imps.map(f=>`<div class="it"><div><div class="d">${esc(CARDS[f.c].nome)} · gastos de ${ml(f.m)}</div><div class="m">vence ${dueLabel(f.c,f.m)} · ${f.rows.length} lançamentos · ${f.ok?"✓ conferida":"⚠ diferença "+fmt(f.dif)}</div></div><div style="display:flex;gap:8px;align-items:center"><span class="v">${fmt(f.total)}</span><button class="del" data-rm="${f.c}|${f.m}" aria-label="Remover fatura" style="width:30px">✕</button></div></div>`).join("")}</details>`:""}
   </div>
   <div class="card"><h3>💬 Lançamento rápido por mensagem</h3><p class="hint">Escreva ou cole mensagens do WhatsApp, um gasto por linha. Mensagens copiadas do WhatsApp trazem o remetente: o app reconhece Luis ${esc(fmtFone(fones().Luis))} e Roanna ${esc(fmtFone(fones().Roanna))}. Ex.:<br><i>mercado 132,50 nubank roanna · uber 25 bradesco · farmácia 89,90 pix · tênis 600 3x ourocard · ontem posto 200 bradesco</i></p>
    <textarea id="qTxt" rows="3" placeholder="mercado 132,50 nubank roanna" style="width:100%;font:inherit;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:12px"></textarea>
@@ -801,14 +817,16 @@ function renderLancar(){
    </div>
    <p class="note" style="margin-top:10px">Neste protótipo, WhatsApp e Wallet aparecem como origem do lançamento. Para faturas novas, use "Enviar faturas do mês" no topo desta tela.</p></div>
   <div class="card"><h3>Lançamentos${who!=="Casal"?" · "+who:""}</h3><input id="srch" placeholder="Buscar loja, categoria ou cartão…" value="${esc(q)}" style="margin-bottom:6px"><div class="list" id="lst"></div></div>`;
-  document.getElementById('upF').onchange=e=>importFiles([...e.target.files]);
+  const upInfo=()=>{const c=+document.getElementById('upC').value,m=document.getElementById('upM').value;const d=dueMonth(m);const has=fatOf(c,m);document.getElementById('upDue').innerHTML=`Fatura com vencimento em <b>${String(CARDS[c].venc).padStart(2,"0")}/${d.slice(5,7)}/${d.slice(0,4)}</b> (gastos de ${ml(m)})${has?" · ⚠ essa fatura já está no app":""}`};
+  document.getElementById('upC').onchange=upInfo; document.getElementById('upM').onchange=upInfo; upInfo();
+  document.getElementById('upF').onchange=e=>{importFiles([...e.target.files],+document.getElementById('upC').value,document.getElementById('upM').value);e.target.value=""};
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const [c,m]=b.dataset.rm.split("|");S.importadas=(S.importadas||[]).filter(f=>!(f.c===+c&&f.m===m));rebuild();render();save("Fatura removida")});
   let origem="Manual";
   el.querySelectorAll('#orig button').forEach(b=>b.onclick=()=>{origem=b.dataset.o;el.querySelectorAll('#orig button').forEach(x=>x.classList.toggle('on',x===b))});
   const g=id=>document.getElementById(id);
-  const upd=()=>{const d=g('nD').value;if(d)g('fRef').textContent="Entra em: "+ml(refMonth(d,g('nP').value))};
+  const upd=()=>{const d=g('nD').value;if(d)g('fRef').textContent="Conta nos gastos de "+ml(refMonth(d,g('nP').value))};
   g('qGo').onclick=()=>{const items=parseQuick(g('qTxt').value);if(!items.length)return toast("Não entendi nenhum gasto: inclua o valor (ex.: mercado 50)");
-    const box=g('qPrev');box.innerHTML=`<div class="list" style="margin-top:8px">${items.map(t=>`<div class="it"><div style="min-width:0"><div class="d">${esc(t.desc)}</div><div class="m">${t.data.slice(8)}/${t.data.slice(5,7)} · ${esc(t.cat)} · ${esc(short(t.cartao))}${t.parcN>1?" · "+t.parcN+"x":""} · ${esc(t.quem)} · entra em ${ml(t.ref)}</div></div><div style="text-align:right"><div class="v">${fmt(t.valor*t.parcN)}</div><span class="cls cls-${t.c}" style="cursor:default">${CLS_S[t.c]}</span></div></div>`).join("")}</div><button class="btn" id="qOk">Lançar ${items.length} gasto(s)</button>`;
+    const box=g('qPrev');box.innerHTML=`<div class="list" style="margin-top:8px">${items.map(t=>`<div class="it"><div style="min-width:0"><div class="d">${esc(t.desc)}</div><div class="m">${t.data.slice(8)}/${t.data.slice(5,7)} · ${esc(t.cat)} · ${esc(short(t.cartao))}${t.parcN>1?" · "+t.parcN+"x":""} · ${esc(t.quem)} · gastos de ${ml(t.ref)}</div></div><div style="text-align:right"><div class="v">${fmt(t.valor*t.parcN)}</div><span class="cls cls-${t.c}" style="cursor:default">${CLS_S[t.c]}</span></div></div>`).join("")}</div><button class="btn" id="qOk">Lançar ${items.length} gasto(s)</button>`;
     g('qOk').onclick=()=>{S.cls=S.cls||{};items.forEach((t,i)=>{const id="n"+Date.now()+"_"+i;const n=t.parcN;S.novos=[{id,data:t.data,desc:t.desc,cat:t.cat,valor:+(t.valor).toFixed(2),parc:n>1?"01/"+String(n).padStart(2,"0"):"",parcN:n,ref:t.ref,cartao:t.cartao,final:"",tipo:n>1?"Parcelado":"Variável",origem:"WhatsApp",quem:t.quem,holder:t.quem}].concat(S.novos||[]);S.cls[id]=t.c});
       curM=items[0].ref;render();save(items.length+" gasto(s) lançado(s) pela mensagem")}};
   g('nD').onchange=upd;g('nP').onchange=upd;upd();
